@@ -20,31 +20,9 @@ use Illuminate\Foundation\Auth\AuthenticatesAndRegistersUsers;
 
 class AuthController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Registration & Login Controller
-    |--------------------------------------------------------------------------
-    |
-    | This controller handles the registration of new users, as well as the
-    | authentication of existing users. By default, this controller uses
-    | a simple trait to add these behaviors. Why don't you explore it?
-    |
-    */
-
     use AuthenticatesAndRegistersUsers, ThrottlesLogins;
-
-    /**
-     * Where to redirect users after login / registration.
-     *
-     * @var string
-     */
     protected $redirectTo = '/home';
     protected $loginPath = '/login';
-    /**
-     * Create a new authentication controller instance.
-     *
-     * @return void
-     */
     public function __construct()
     {
         $this->middleware($this->guestMiddleware(), ['except' => 'logout']);
@@ -55,32 +33,13 @@ class AuthController extends Controller
         $this->arcadeTB = new ArcadesTB;
         $this->leaderboard = new LeaderBoardTB;
     }
-
-    /**
-     * Show login form
-     *
-     * @return Login view
-     */
     public function showLoginForm(){
         abort(404);
     }
-
-
-    /**
-     * Redirect to Login
-     *
-     * @return Redirect to login
-     */
     public function showRegistrationForm(){
 
        abort(404);
     }
-
-     /**
-     * Registration post
-     *
-     * @return Json
-     */
     public function register(Request $request){
         $validator = Validator::make($request->all(),  [
             'username' => 'required|min:3',
@@ -106,12 +65,6 @@ class AuthController extends Controller
             }
         }
     }
-
-     /**
-     * Login to authorize user
-     *
-     * @return Json
-     */
     public function login(Request $request){
         $userNameCheck = $this->user->where(['username'=>$request->username])->first();
         if($userNameCheck){
@@ -134,15 +87,12 @@ class AuthController extends Controller
             return response()->json('notExist');  
         }
     }
-
     public function getToken(){
         return response()->json(csrf_token());
     }
-
     public function getDialects(Request $request){
         return response()->json($this->dialect->all());
     }
-
     public function getRandomText(Request $request){
         if ($request->session()->has('logged')){
             $basetb = \App\BaseTB::orderByRaw('RANDOM()')->first();
@@ -158,10 +108,8 @@ class AuthController extends Controller
         }    
         else{
             abort(403, 'Unauthorized action.');
-        }
-                
+        }         
     }
-
     public function saveTranslate(Request $request) {
         if ($request->session()->has('logged')){
             $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
@@ -206,6 +154,7 @@ class AuthController extends Controller
                     $levelno = $userArcade->arcade_id + 1;
                     $arcadeDB = $this->arcadeTB->where('arcade_level',$levelno)->first();
                     $translateText = $this->getTranslateText($arcadeDB->char_limit);
+                    $shuffled = str_shuffle($translateText['synset_terms']);
                     $userDetails['level_name'] = 'Level '.$levelno;
                     $userDetails['arcade_id'] = $levelno;
                     $userDetails['arcade_map'] = $arcadeDB->arcade_map;
@@ -268,7 +217,8 @@ class AuthController extends Controller
     }
 
     private function getTranslateText($limit){
-        $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) <= ".$limit)->orderByRaw('RANDOM()')->first();
+        $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) <= ".$limit." AND char_length(btrim(synset_terms[1],'#0123456789')) > 1 ")->orderByRaw('RANDOM()')->first();
+        // dump($basetb);
         $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
         $transArray = [];
         $transArray['base_id'] = $basetb->base_id;
@@ -279,11 +229,6 @@ class AuthController extends Controller
 
     public function getTopPlayers(){
         $top = DB::select('select a.user_id, u.username, max(a.arcade_id) lvl, b.translated_word, b.guessed_word from dictionary.user_arcade_fact a left join dictionary.user_leaderboard_tb b on a.user_id = b.user_id join dictionary.users_tb u on a.user_id = u.user_id group by a.user_id, u.username ,b.translated_word, b.guessed_word order by lvl desc limit 5');
-        // $ld = $this->leaderboard->user_arcade()->orderBy('arcade_id')->take(10)->toSql();
-        // $ld = $this->leaderboard->orderBy('arcade_id')->take(10)->toSql();
-        // ->orderBy('translated_word')
-
-         // dump($top);
         return response()->json($top);
     }
 
@@ -295,7 +240,8 @@ class AuthController extends Controller
                             on ul.user_id = utb.user_id
                             where utb.user_id = '.$request->session()->get('userSession')['user_id'].'
                             group by utb.user_id, ul.translated_word,ul.guessed_word');
-        return response()->json($stats[0]);
+        $stats = ($stats == null) ? 0 : $stats[0];
+        return response()->json($stats);
     }
 
 
