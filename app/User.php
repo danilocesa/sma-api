@@ -33,7 +33,6 @@ class User extends Authenticatable
     protected $table = 'dictionary.users_tb';
     protected $primaryKey = 'user_id';
 
-
     // public function userArcade(){
     //     return $this->hasMany('App\UserArcadeTB','user_id');
     // }

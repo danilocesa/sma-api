@@ -9,6 +9,7 @@ use App\TranslateTB;
 use App\ArcadesTB;
 use App\UserArcadeTB;
 use App\LeaderBoardTB;
+use App\userSettings;
 use Validator;
 use Hash;
 use Auth;
@@ -23,8 +24,11 @@ class AuthController extends Controller
     use AuthenticatesAndRegistersUsers, ThrottlesLogins;
     protected $redirectTo = '/home';
     protected $loginPath = '/login';
-    public function __construct()
-    {
+    /*
+    * Initializing models
+    *
+    */
+    public function __construct(){
         $this->middleware($this->guestMiddleware(), ['except' => 'logout']);
         $this->user = new User;
         $this->dialect = new Dialects;
@@ -32,14 +36,14 @@ class AuthController extends Controller
         $this->userArcade = new UserArcadeTB;
         $this->arcadeTB = new ArcadesTB;
         $this->leaderboard = new LeaderBoardTB;
+        $this->userSettings = new UserSettings;
     }
-    public function showLoginForm(){
-        abort(404);
-    }
-    public function showRegistrationForm(){
-
-       abort(404);
-    }
+    public function showLoginForm(){abort(404);}
+    public function showRegistrationForm(){abort(404);}
+    /*
+    *  Registration
+    *
+    */
     public function register(Request $request){
         $validator = Validator::make($request->all(),  [
             'username' => 'required|min:3',
@@ -56,15 +60,51 @@ class AuthController extends Controller
             if($checkUser){
                 return response()->json('exists');   
             }else{
+
                 $this->user->username = $request->username;
                 $this->user->password = bcrypt($request->password);
                 $this->user->email = $request->email;
                 $this->user->dialect = $request->dialect;
                 $this->user->save();
+
+                $this->userSettings->user_id  = DB::table('dictionary.users_tb')->max('user_id');
+                $this->userSettings->setting_music = '285';
+                $this->userSettings->dialect_id = $request->dialect;
+                $this->userSettings->music_volume = 1;
+                $this->userSettings->save();
+
                 return response()->json('success');   
             }
         }
     }
+    /*
+    * Forgot Password
+    *
+    */
+    public function forgot(Request $request){
+        $validator = Validator::make($request->all(),  [
+            'user_name' => 'required|min:3',
+            'new-password' => 'required|min:6',
+            'confirm-password' => 'required|same:new-password'
+        ],[
+            'required' => 'This field is required.',
+        ]
+        );
+        if ($validator->fails()) {
+            return response()->json($validator->errors());
+        }else{
+            $checkUser = $this->user->where(['username'=>$request->user_name])->first();
+            if($checkUser){
+                return response()->json('success'); 
+            }else{
+               return response()->json('nope');   
+            }
+        }
+    }
+    /*
+    * Login
+    *
+    */
     public function login(Request $request){
         $userNameCheck = $this->user->where(['username'=>$request->username])->first();
         if($userNameCheck){
@@ -87,40 +127,22 @@ class AuthController extends Controller
             return response()->json('notExist');  
         }
     }
-    public function getToken(){
-        return response()->json(csrf_token());
-    }
-    public function getDialects(Request $request){
-        return response()->json($this->dialect->all());
-    }
-    public function getRandomText(Request $request){
-        if ($request->session()->has('logged')){
-            $basetb = \App\BaseTB::orderByRaw('RANDOM()')->first();
-            $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
-            $arrayRand = [];
-            $arrayRand['base_id'] = $basetb->base_id;
-            $arrayRand['synset_terms'] =  substr( strtoupper($synsetOne[0]), 0, -2);
-            $arrayRand['gloss'] = $basetb->gloss;
-            $arrayRand['pos'] = $basetb->pos;
-            $arrayRand['pos_score'] = $basetb->pos_score;
-            $arrayRand['neg_score'] = $basetb->neg_score;
-            return response()->json($arrayRand);
-        }    
-        else{
-            abort(403, 'Unauthorized action.');
-        }         
-    }
+    /*
+    * Save translated word, user level and leader board
+    *
+    */
     public function saveTranslate(Request $request) {
         if ($request->session()->has('logged')){
             $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
 
-            if($request->translated == 1){ //Insert translated
+            if($request->phase == 1){ //Insert translated
                 if(count($leaderboard) < 1){ //Insert
                     $this->leaderboard->user_id = $request->session()->get('userSession')['user_id'];
                     $this->leaderboard->translated_word = 1;
+                    $this->leaderboard->total_score = 3;
                     $this->leaderboard->save();
                 } else { // Update
-                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['translated_word'=>$leaderboard->translated_word + 1]);
+                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['translated_word'=>$leaderboard->translated_word + 1,'total_score'=> $leaderboard->total_score + 5]);
                 }
             }
             if($request->uaTB == 1){
@@ -141,8 +163,133 @@ class AuthController extends Controller
             abort(403, 'Unauthorized action.');
         }
     }
+    /*
+    * Save user settings or update
+    *
+    */
+    public function saveUserSettings(Request $request){
+        if ($request->session()->has('logged')){
+            
+            $checkUser = $this->userSettings->where(['user_id'=>$request->session()->get('userSession')['user_id']])->first();
+            if(count($checkUser) > 0){
+                //Update user table
+                $this->user->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['dialect'=>$request->dialect]);
+                //Update user settings table
+                $this->userSettings->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['dialect_id'=>$request->dialect,'setting_music'=>round($request->musicPos,1),'music_volume'=>$request->musicVol]);
 
-    function userInfo(Request $request,$info){
+            } else { //Insert into settings table
+                $this->userSettings->user_id = $request->session()->get('userSession')['user_id'];
+                $this->userSettings->setting_music = round($request->musicPos, 1);
+                $this->userSettings->dialect_id = $request->dialect;
+                $this->userSettings->music_volume = $request->musicVol;
+                $this->userSettings->save();
+            }
+            return response()->json($request);  
+        } else {
+            abort(403, 'Unauthorized action.');
+        }
+    }
+    /*
+    * Save score from direct translate and play mode
+    *
+    */
+    public function saveScore(Request $request){
+        if ($request->session()->has('logged')){
+            $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
+            if($request->guessed == 1){ //Insert guess_word
+                if(count($leaderboard) < 1){ //Insert
+                    $this->leaderboard->user_id = $request->session()->get('userSession')['user_id'];
+                    $this->leaderboard->guessed_word = 1;
+                    $this->leaderboard->total_score = 3;
+                    $this->leaderboard->save();
+                } else { // Update
+                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['guessed_word'=>$leaderboard->guessed_word + 1,'total_score'=> $leaderboard->total_score + 3]);
+                }
+                return response()->json(1);
+            }
+            return response()->json($request);  
+        } else {
+            abort(403, 'Unauthorized action.');
+        }
+    }
+    /* Get Token
+    *
+    *
+    */
+    public function getToken(){return response()->json(csrf_token());}
+    /*
+    * Get dialect for registration
+    *
+    */
+    public function getDialects(Request $request){return response()->json($this->dialect->all());}
+    /*
+    * Get random text
+    *
+    */
+    public function getRandomText(Request $request){
+        if ($request->session()->has('logged')){
+            $basetb = \App\BaseTB::orderByRaw('RANDOM()')->first();
+            $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
+            $arrayRand = [];
+            $arrayRand['base_id'] = $basetb->base_id;
+            $arrayRand['synset_terms'] =  substr( strtoupper($synsetOne[0]), 0, -2);
+            $arrayRand['gloss'] = $basetb->gloss;
+            $arrayRand['pos'] = $basetb->pos;
+            $arrayRand['pos_score'] = $basetb->pos_score;
+            $arrayRand['neg_score'] = $basetb->neg_score;
+            return response()->json($arrayRand);
+        }    
+        else{
+            abort(403, 'Unauthorized action.');
+        }         
+    }
+    /*
+    * Get translate text
+    *
+    */
+    private function getTranslateText($limit){
+        $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) <= ".$limit." AND char_length(btrim(synset_terms[1],'#0123456789')) > 1 ")->orderByRaw('RANDOM()')->first();
+        // dump($basetb);
+        $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
+        $transArray = [];
+        $transArray['base_id'] = $basetb->base_id;
+        $transArray['synset_terms'] =  substr( strtoupper($synsetOne[0]), 0, -2);
+        $transArray['gloss'] = $basetb->gloss;
+        return $transArray;
+    }
+    /*
+    * Get leader board players
+    *
+    */
+    public function getTopPlayers(){
+        $top = DB::select('select a.user_id, u.username, max(a.arcade_id) lvl, b.translated_word, b.guessed_word, b.total_score total_score
+                            from dictionary.user_arcade_fact a 
+                            left join dictionary.user_leaderboard_tb b on a.user_id = b.user_id 
+                            join dictionary.users_tb u on a.user_id = u.user_id 
+                            group by a.user_id, u.username ,b.translated_word, b.guessed_word, b.total_score
+                            order by total_score, lvl desc limit 5');
+        return response()->json($top);
+    }
+    /*
+    * Get user stats
+    *
+    */
+    public function getStats(Request $request){
+        $stats = DB::select('select max(ua.arcade_id) lvl, ul.translated_word translated , ul.guessed_word guessed , ul.total_score total_score from dictionary.users_tb utb
+                            left join dictionary.user_arcade_fact ua
+                            on utb.user_id = ua.user_id
+                            join dictionary.user_leaderboard_tb ul
+                            on ul.user_id = utb.user_id
+                            where utb.user_id = '.$request->session()->get('userSession')['user_id'].'
+                            group by utb.user_id, ul.translated_word,ul.guessed_word,ul.total_score');
+        $stats = ($stats == null) ? 0 : $stats[0];
+        return response()->json($stats);
+    }
+    /*
+    * Get user info
+    *
+    */
+    public function userInfo(Request $request,$info){
         $userId = $request->session()->get('userSession')['user_id'];
         $userInfo = '';
         switch ($info) {
@@ -185,78 +332,57 @@ class AuthController extends Controller
         
         return response()->json($userInfo);
     }
-
-    function saveUserSettings(Request $request){
-        if ($request->session()->has('logged')){
-            $this->user->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['dialect'=>$request->dialect]);
-            return response()->json($request);  
-        } else {
-            abort(403, 'Unauthorized action.');
-        }
-    }
-
-     function saveScore(Request $request){
-        if ($request->session()->has('logged')){
-            $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
-            // return response()->json(count($leaderboard));
-            if($request->guessed == 1){ //Insert guess_word
-                if(count($leaderboard) < 1){ //Insert
-                    $this->leaderboard->user_id = $request->session()->get('userSession')['user_id'];
-                    $this->leaderboard->guessed_word = 1;
-                    $this->leaderboard->save();
-                } else { // Update
-                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['guessed_word'=>$leaderboard->guessed_word + 1]);
-                }
-                return response()->json(1);
-            }
-            // $this->user->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['dialect'=>$request->dialect]);
-            return response()->json($request);  
-        } else {
-            abort(403, 'Unauthorized action.');
-        }
-    }
-
-    private function getTranslateText($limit){
-        $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) <= ".$limit." AND char_length(btrim(synset_terms[1],'#0123456789')) > 1 ")->orderByRaw('RANDOM()')->first();
-        // dump($basetb);
-        $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
-        $transArray = [];
-        $transArray['base_id'] = $basetb->base_id;
-        $transArray['synset_terms'] =  substr( strtoupper($synsetOne[0]), 0, -2);
-        $transArray['gloss'] = $basetb->gloss;
-        return $transArray;
-    }
-
-    public function getTopPlayers(){
-        $top = DB::select('select a.user_id, u.username, max(a.arcade_id) lvl, b.translated_word, b.guessed_word from dictionary.user_arcade_fact a left join dictionary.user_leaderboard_tb b on a.user_id = b.user_id join dictionary.users_tb u on a.user_id = u.user_id group by a.user_id, u.username ,b.translated_word, b.guessed_word order by lvl desc limit 5');
-        return response()->json($top);
-    }
-
-    public function getStats(Request $request){
-        $stats = DB::select('select max(ua.arcade_id) lvl, ul.translated_word translated , ul.guessed_word guessed from dictionary.users_tb utb
-                            left join dictionary.user_arcade_fact ua
-                            on utb.user_id = ua.user_id
-                            join dictionary.user_leaderboard_tb ul
-                            on ul.user_id = utb.user_id
-                            where utb.user_id = '.$request->session()->get('userSession')['user_id'].'
-                            group by utb.user_id, ul.translated_word,ul.guessed_word');
-        $stats = ($stats == null) ? 0 : $stats[0];
-        return response()->json($stats);
-    }
-
-
-    function checkUserLogged(Request $request){
+    /*
+    * Get logged user
+    *
+    */
+    public function checkUserLogged(Request $request){
         if ($request->session()->has('userSession')){ 
             return response()->json(true);
         } else{
             return response()->json(false);
         }
     }
-
-    function deleteSession(Request $request){
-        $request->session()->flush();
+    /*
+    * Get user settings
+    *
+    */
+    public function getUserSettings(Request $request){
+        if ($request->session()->has('logged')){
+            $userSettings = $this->userSettings->where(['user_id'=>$request->session()->get('userSession')['user_id']])->first();
+            return response()->json($userSettings);
+        } else {
+            abort(403, 'Unauthorized action.');
+        }    
     }
+    /*
+    * Get delete session
+    *
+    */
+    function deleteSession(Request $request){$request->session()->flush();}
+    /*
+    * Deduct score on skip
+    *
+    */
+    public function deductScore(Request $request){
+        // dd($request->session()->has('skipCount'))      
+        if ($request->session()->has('skipCount')) {
+            $request->session()->put('skipCount', $request->session()->get('skipCount') + 1); 
+        } else{
+            $request->session()->put('skipCount', 1); 
+        }
 
+
+        if($request->session()->get('skipCount') >= 5){
+            $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
+            if(count($leaderboard) >= 1){ //Insert
+                $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['total_score'=> $leaderboard->total_score - 1]);
+            } 
+            $request->session()->forget('skipCount');
+        }
+       
+        return response()->json(true);
+    }
 
 
 }

@@ -11,9 +11,6 @@
 |
 */
 
-Route::get('/', function () {
-    return redirect('/login');
-});
 
 Route::auth();
 
@@ -27,6 +24,10 @@ Route::get('/getUserLogged', 'Auth\AuthController@checkUserLogged');
 Route::get('/deleteSession', 'Auth\AuthController@deleteSession');
 Route::get('/topPlayers', 'Auth\AuthController@getTopPlayers');
 Route::get('/getStats', 'Auth\AuthController@getStats');
+Route::get('/deductScore', 'Auth\AuthController@deductScore');
+Route::get('/userSettings', 'Auth\AuthController@getUserSettings');
 Route::post('/saveUserSettings', 'Auth\AuthController@saveUserSettings');
 Route::post('/saveTranslate', 'Auth\AuthController@saveTranslate');
 Route::post('/saveScore', 'Auth\AuthController@saveScore');
+Route::post('/forgot', 'Auth\AuthController@forgot');
+
