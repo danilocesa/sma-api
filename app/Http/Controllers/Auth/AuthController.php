@@ -46,7 +46,7 @@ class AuthController extends Controller
     */
     public function register(Request $request){
         $validator = Validator::make($request->all(),  [
-            'username' => 'required|min:3',
+            'username' => 'required|min:3|max:10',
             'password' => 'required|min:6',
             'password_confirmation' => 'required|same:password',
             'email'    => 'required|email',
@@ -83,7 +83,7 @@ class AuthController extends Controller
     */
     public function forgot(Request $request){
         $validator = Validator::make($request->all(),  [
-            'user_name' => 'required|min:3',
+            'email' => 'required|email',
             'new-password' => 'required|min:6',
             'confirm-password' => 'required|same:new-password'
         ],[
@@ -93,7 +93,7 @@ class AuthController extends Controller
         if ($validator->fails()) {
             return response()->json($validator->errors());
         }else{
-            $checkUser = $this->user->where(['username'=>$request->user_name])->first();
+            $checkUser = $this->user->where(['email'=>$request->email])->first();
             if($checkUser){
                 return response()->json('success'); 
             }else{
@@ -228,7 +228,7 @@ class AuthController extends Controller
     */
     public function getRandomText(Request $request){
         if ($request->session()->has('logged')){
-            $basetb = \App\BaseTB::orderByRaw('RANDOM()')->first();
+            $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) > 1 ")->orderByRaw('RANDOM()')->first();
             $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
             $arrayRand = [];
             $arrayRand['base_id'] = $basetb->base_id;
@@ -267,7 +267,7 @@ class AuthController extends Controller
                             left join dictionary.user_leaderboard_tb b on a.user_id = b.user_id 
                             join dictionary.users_tb u on a.user_id = u.user_id 
                             group by a.user_id, u.username ,b.translated_word, b.guessed_word, b.total_score
-                            order by total_score, lvl desc limit 5');
+                            order by total_score desc,lvl  limit 5');
         return response()->json($top);
     }
     /*
