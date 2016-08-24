@@ -10,6 +10,7 @@ use App\ArcadesTB;
 use App\UserArcadeTB;
 use App\LeaderBoardTB;
 use App\userSettings;
+use App\Logs;
 use Validator;
 use Hash;
 use Auth;
@@ -31,6 +32,7 @@ class AuthController extends Controller
     public function __construct(){
         $this->middleware($this->guestMiddleware(), ['except' => 'logout']);
         $this->user = new User;
+        $this->base = new BaseTB;
         $this->dialect = new Dialects;
         $this->translateTB = new TranslateTB;
         $this->userArcade = new UserArcadeTB;
@@ -60,7 +62,6 @@ class AuthController extends Controller
             if($checkUser){
                 return response()->json('exists');   
             }else{
-
                 $this->user->username = $request->username;
                 $this->user->password = bcrypt($request->password);
                 $this->user->email = $request->email;
@@ -134,15 +135,25 @@ class AuthController extends Controller
     public function saveTranslate(Request $request) {
         if ($request->session()->has('logged')){
             $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
+            $dialect_id = $request->session()->get('userSession')['dialect'];
+            $score = null;
+            if($dialect_id == 16) {
+                $score = 3;
+            } else if($dialect_id == 7 || $dialect_id == 3 || $dialect_id == 9 || $dialect_id == 13 || $dialect_id == 18){
+                $score = 5;
+            }
+            else{
+                $score = 8;
+            }
 
             if($request->phase == 1){ //Insert translated
                 if(count($leaderboard) < 1){ //Insert
                     $this->leaderboard->user_id = $request->session()->get('userSession')['user_id'];
                     $this->leaderboard->translated_word = 1;
-                    $this->leaderboard->total_score = 3;
+                    $this->leaderboard->total_score = $score;
                     $this->leaderboard->save();
                 } else { // Update
-                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['translated_word'=>$leaderboard->translated_word + 1,'total_score'=> $leaderboard->total_score + 5]);
+                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['translated_word'=>$leaderboard->translated_word + 1,'total_score'=> $leaderboard->total_score + $score]);
                 }
             }
             if($request->uaTB == 1){
@@ -157,7 +168,9 @@ class AuthController extends Controller
             $this->translateTB->sentiment = $request->sentiment;
             $this->translateTB->date = date('Y-m-d H:i:s');
             $this->translateTB->save();
+
             return response()->json('success'); 
+            // return response()->json(array('score'=>$score,'dialect'=>$dialect_id)); 
         }
         else{
             abort(403, 'Unauthorized action.');
@@ -174,6 +187,12 @@ class AuthController extends Controller
             if(count($checkUser) > 0){
                 //Update user table
                 $this->user->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['dialect'=>$request->dialect]);
+                $request->session()->put('userSession', array(
+                    'user_id'=>$request->session()->get('userSession')['user_id']
+                    ,'username'=>$request->session()->get('userSession')['username']
+                    ,'email'=>$request->session()->get('userSession')['email']
+                    ,'dialect'=>$request->dialect
+                ));
                 //Update user settings table
                 $this->userSettings->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['dialect_id'=>$request->dialect,'setting_music'=>round($request->musicPos,1),'music_volume'=>$request->musicVol]);
 
@@ -196,14 +215,24 @@ class AuthController extends Controller
     public function saveScore(Request $request){
         if ($request->session()->has('logged')){
             $leaderboard = $this->leaderboard->where('user_id',$request->session()->get('userSession')['user_id'])->first();
+            $dialect_id = $request->session()->get('userSession')['dialect'];
+            $score = null;
+            if($dialect_id == 16) {
+                $score = 3;
+            } else if($dialect_id == 7 || $dialect_id == 3 || $dialect_id == 9 || $dialect_id == 13 || $dialect_id == 18){
+                $score = 5;
+            }
+            else{
+                $score = 8;
+            }
             if($request->guessed == 1){ //Insert guess_word
                 if(count($leaderboard) < 1){ //Insert
                     $this->leaderboard->user_id = $request->session()->get('userSession')['user_id'];
                     $this->leaderboard->guessed_word = 1;
-                    $this->leaderboard->total_score = 3;
+                    $this->leaderboard->total_score = $score;
                     $this->leaderboard->save();
                 } else { // Update
-                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['guessed_word'=>$leaderboard->guessed_word + 1,'total_score'=> $leaderboard->total_score + 3]);
+                    $this->leaderboard->where(['user_id'=>$request->session()->get('userSession')['user_id']])->update(['guessed_word'=>$leaderboard->guessed_word + 1,'total_score'=> $leaderboard->total_score + $score]);
                 }
                 return response()->json(1);
             }
@@ -228,16 +257,7 @@ class AuthController extends Controller
     */
     public function getRandomText(Request $request){
         if ($request->session()->has('logged')){
-            $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) > 1 ")->orderByRaw('RANDOM()')->first();
-            $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
-            $arrayRand = [];
-            $arrayRand['base_id'] = $basetb->base_id;
-            $arrayRand['synset_terms'] =  substr( strtoupper($synsetOne[0]), 0, -2);
-            $arrayRand['gloss'] = $basetb->gloss;
-            $arrayRand['pos'] = $basetb->pos;
-            $arrayRand['pos_score'] = $basetb->pos_score;
-            $arrayRand['neg_score'] = $basetb->neg_score;
-            return response()->json($arrayRand);
+            return response()->json($this->getTranslateText(25));
         }    
         else{
             abort(403, 'Unauthorized action.');
@@ -249,12 +269,12 @@ class AuthController extends Controller
     */
     private function getTranslateText($limit){
         $basetb = \App\BaseTB::whereRaw("char_length(btrim(synset_terms[1],'#0123456789')) <= ".$limit." AND char_length(btrim(synset_terms[1],'#0123456789')) > 1 ")->orderByRaw('RANDOM()')->first();
-        // dump($basetb);
         $synsetOne = str_replace('#','',str_replace('_',' ',explode(",", substr($basetb->synset_terms, 1, -1))));
         $transArray = [];
         $transArray['base_id'] = $basetb->base_id;
-        $transArray['synset_terms'] =  substr( strtoupper($synsetOne[0]), 0, -2);
+        $transArray['synset_terms'] =  strtoupper(rtrim($synsetOne[0],'#0123456789'));
         $transArray['gloss'] = $basetb->gloss;
+        $transArray['synsetOne'] = $synsetOne[0];
         return $transArray;
     }
     /*
@@ -309,6 +329,7 @@ class AuthController extends Controller
                     $userDetails['base_id'] = $translateText['base_id'];
                     $userDetails['synset_terms'] = $translateText['synset_terms'];
                     $userDetails['gloss'] = $translateText['gloss'];
+
                     $userInfo = $userDetails;
                 } else{
                     $arcadeDB = $this->arcadeTB->where('arcade_level',1)->first();
@@ -325,6 +346,7 @@ class AuthController extends Controller
                 break;
             case 'user':
                 $userInfo = $this->user->where(['user_id'=>$userId])->first();
+                $userInfo['dialect_name'] = $this->dialect->where('dialect_id',$userInfo->dialect)->first()->dialect;
                 break;
             default:
                 abort(404);    
@@ -359,7 +381,7 @@ class AuthController extends Controller
     * Get delete session
     *
     */
-    function deleteSession(Request $request){$request->session()->flush();}
+    public function deleteSession(Request $request){$request->session()->flush(); return 'deleted'; }
     /*
     * Deduct score on skip
     *
@@ -381,8 +403,9 @@ class AuthController extends Controller
             $request->session()->forget('skipCount');
         }
        
-        return response()->json(true);
+        return response()->json(5 - $request->session()->get('skipCount'));
     }
+
 
 
 }

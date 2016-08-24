@@ -31,3 +31,7 @@ Route::post('/saveTranslate', 'Auth\AuthController@saveTranslate');
 Route::post('/saveScore', 'Auth\AuthController@saveScore');
 Route::post('/forgot', 'Auth\AuthController@forgot');
 
+
+
+Route::get('yohoo','Auth\AuthController@getBasic');
+Route::get('yohoo/logsData','Auth\AuthController@getBasicData');
