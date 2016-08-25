@@ -33,5 +33,18 @@ Route::post('/forgot', 'Auth\AuthController@forgot');
 
 
 
-Route::get('yohoo','Auth\AuthController@getBasic');
-Route::get('yohoo/logsData','Auth\AuthController@getBasicData');
+// Route::get('yohoo','YohooController@getBasic');
+// Route::get('yohoo/logsData','YohooController@getBasicData');
+
+Route::group(['prefix'=>'heymen'],function(){
+
+Route::resource('yohoo','YohooController');
+
+
+Route::get('players/basic-data','PlayerController@getBasicData');
+Route::get('players/top-details/{id}','PlayerController@topDetails');
+Route::get('players/top-data/{id}','PlayerController@topData');
+Route::resource('players','PlayerController');
+
+});
+
